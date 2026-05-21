@@ -33,6 +33,16 @@ message WorkflowSpec {
   map<string, string> labels = 3;
 }
 
+// A designed sequence surfaced inline by an inverse-folding step (ProteinMPNN).
+// Carried alongside artifact outputs so a downstream AF2/Boltz step can fold the
+// best-scoring sequence without a separate artifact round-trip.
+message DesignedSequence {
+  string fasta = 1;
+  double global_score = 2;   // mean negative log-likelihood, lower is better
+  double seq_recovery = 3;
+  uint32 sample_index = 4;
+}
+
 message StepStatus {
   string step_id = 1;
   foldforge.common.v1.JobState state = 2;
@@ -41,6 +51,7 @@ message StepStatus {
   optional foldforge.common.v1.ErrorDetail error = 5;
   google.protobuf.Timestamp started_at = 6;
   google.protobuf.Timestamp finished_at = 7;
+  repeated DesignedSequence sequences = 8;  // inverse-folding outputs (ProteinMPNN)
 }
 
 message Workflow {

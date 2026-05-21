@@ -22,6 +22,10 @@ message Artifact {
   string content_type = 2;     // "chemical/x-pdb", "chemical/x-cif", "text/x-fasta", "text/x-a3m"
   uint64 size_bytes = 3;
   string sha256 = 4;           // integrity + cache key
+  // Per-artifact quality metrics, preserved when a prediction (with its scores)
+  // is flattened to an artifact reference: e.g. {"plddt": 0.91, "ptm": 0.83}.
+  // Design-pipeline ranking depends on these surviving the hand-off downstream.
+  map<string, double> metrics = 5;
 }
 
 // Canonical lifecycle state shared by jobs, steps and workflows.
