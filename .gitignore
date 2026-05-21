@@ -1,0 +1,7 @@
+# generated code (consumers regenerate locally / in CI)
+/gen/
+*.pb.go
+*_pb2.py
+*_pb2.pyi
+*_pb2_grpc.py
+.DS_Store

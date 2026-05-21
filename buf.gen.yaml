@@ -1,0 +1,17 @@
+version: v2
+# Rust is generated per-consumer via tonic-build in build.rs (see README).
+# This file covers Python (sidecars) and Go (optional clients) using remote
+# plugins, so no local codegen toolchain is required.
+managed:
+  enabled: true
+plugins:
+  - remote: buf.build/protocolbuffers/python
+    out: gen/python
+  - remote: buf.build/grpc/python
+    out: gen/python
+  - remote: buf.build/protocolbuffers/go
+    out: gen/go
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go
+    out: gen/go
+    opt: paths=source_relative

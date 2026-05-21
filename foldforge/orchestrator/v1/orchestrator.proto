@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package foldforge.orchestrator.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "foldforge/common/v1/common.proto";
+
+option go_package = "github.com/FoldForge/proto/gen/go/foldforge/orchestrator/v1;orchestratorv1";
+
+// Orchestrator: accepts a workflow DAG and drives sidecars to completion.
+service OrchestratorService {
+  rpc SubmitWorkflow(SubmitWorkflowRequest) returns (Workflow);
+  rpc GetWorkflow(GetWorkflowRequest) returns (Workflow);
+  rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse);
+  rpc StreamWorkflowEvents(GetWorkflowRequest) returns (stream WorkflowEvent);
+  rpc CancelWorkflow(GetWorkflowRequest) returns (Workflow);
+}
+
+// One node in the workflow DAG. params is tool-specific and validated by
+// the orchestrator against the matching sidecar RunRequest schema.
+message Step {
+  string id = 1;                       // unique within workflow
+  string tool = 2;                     // "rfdiffusion" | "proteinmpnn" | "boltz" | "af2"
+  repeated string depends_on = 3;      // step ids; defines DAG edges
+  google.protobuf.Struct params = 4;   // free-form tool params
+  foldforge.common.v1.ResourceSpec resources = 5;
+}
+
+message WorkflowSpec {
+  string name = 1;
+  repeated Step steps = 2;
+  map<string, string> labels = 3;
+}
+
+message StepStatus {
+  string step_id = 1;
+  foldforge.common.v1.JobState state = 2;
+  float fraction = 3;
+  repeated foldforge.common.v1.Artifact outputs = 4;
+  optional foldforge.common.v1.ErrorDetail error = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp finished_at = 7;
+}
+
+message Workflow {
+  string id = 1;
+  WorkflowSpec spec = 2;
+  foldforge.common.v1.JobState state = 3;
+  repeated StepStatus step_statuses = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message SubmitWorkflowRequest {
+  WorkflowSpec spec = 1;
+  string idempotency_key = 2;          // dedupe retried submissions
+}
+
+message GetWorkflowRequest {
+  string workflow_id = 1;
+}
+
+message ListWorkflowsRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+  optional foldforge.common.v1.JobState state_filter = 3;
+}
+
+message ListWorkflowsResponse {
+  repeated Workflow workflows = 1;
+  string next_page_token = 2;
+}
+
+message WorkflowEvent {
+  string workflow_id = 1;
+  oneof event {
+    StepStatus step_update = 2;
+    Workflow workflow_update = 3;
+  }
+  google.protobuf.Timestamp at = 4;
+}

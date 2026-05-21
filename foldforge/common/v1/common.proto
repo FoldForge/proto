@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package foldforge.common.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/FoldForge/proto/gen/go/foldforge/common/v1;commonv1";
+
+// Compute resource requirements for a single sidecar task.
+message ResourceSpec {
+  string gpu_type = 1;          // e.g. "A100-80G", "H100", "L40S"
+  uint32 gpu_count = 2;         // default 1
+  uint32 cpu_cores = 3;
+  uint32 memory_mb = 4;
+  uint32 timeout_seconds = 5;   // hard wall-clock cap
+}
+
+// Reference to a binary artifact stored in object storage (Cloudflare R2).
+// Sidecars exchange large blobs (PDB/CIF/MSA) by reference, never inline.
+message Artifact {
+  string uri = 1;              // r2://bucket/key
+  string content_type = 2;     // "chemical/x-pdb", "chemical/x-cif", "text/x-fasta", "text/x-a3m"
+  uint64 size_bytes = 3;
+  string sha256 = 4;           // integrity + cache key
+}
+
+// Canonical lifecycle state shared by jobs, steps and workflows.
+enum JobState {
+  JOB_STATE_UNSPECIFIED = 0;
+  JOB_STATE_QUEUED = 1;
+  JOB_STATE_RUNNING = 2;
+  JOB_STATE_SUCCEEDED = 3;
+  JOB_STATE_FAILED = 4;
+  JOB_STATE_CANCELLED = 5;
+}
+
+// Streamed progress heartbeat emitted by long-running GPU tasks.
+message ProgressEvent {
+  JobState state = 1;
+  float fraction = 2;          // 0.0 - 1.0
+  string message = 3;          // human-readable stage, e.g. "diffusion step 12/50"
+  google.protobuf.Timestamp at = 4;
+}
+
+// Structured error returned on terminal failure.
+message ErrorDetail {
+  string code = 1;             // machine code, e.g. "OOM", "INVALID_CONTIG"
+  string message = 2;
+  bool retryable = 3;
+}

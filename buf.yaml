@@ -1,0 +1,15 @@
+version: v2
+modules:
+  - path: .
+lint:
+  use:
+    - STANDARD
+  except:
+    # Deliberate: Run -> stream RunUpdate (semantic streaming name) and
+    # Empty-input capability probes (GetCapabilities) over strict naming.
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+  enum_zero_value_suffix: _UNSPECIFIED
+breaking:
+  use:
+    - FILE

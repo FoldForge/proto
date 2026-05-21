@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package foldforge.af2.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "foldforge/common/v1/common.proto";
+
+option go_package = "github.com/FoldForge/proto/gen/go/foldforge/af2/v1;af2v1";
+
+// AlphaFold2: monomer/multimer structure prediction.
+// MSA generation (jackhmmer/hhblits) dominates wall-clock and is CPU-bound;
+// caching MSAs by sequence hash is the single biggest cost lever, so it is
+// promoted to first-class API surface here.
+service AF2Service {
+  rpc Run(RunRequest) returns (stream RunUpdate);
+  // Cheap lookup so the orchestrator can route CACHE_ONLY work off-GPU.
+  rpc QueryMsaCache(MsaCacheQuery) returns (MsaCacheEntry);
+  rpc GetCapabilities(google.protobuf.Empty) returns (Capabilities);
+}
+
+enum MsaCachePolicy {
+  MSA_CACHE_POLICY_UNSPECIFIED = 0;
+  MSA_CACHE_POLICY_USE_CACHE = 1;      // use if present, else compute and store
+  MSA_CACHE_POLICY_FORCE_RECOMPUTE = 2;
+  MSA_CACHE_POLICY_CACHE_ONLY = 3;     // fail fast if MSA not already cached
+}
+
+message RunRequest {
+  string sequence = 1;                 // single-letter AA; multimer = chains joined by ':'
+  MsaCachePolicy msa_cache_policy = 2;
+  optional string msa_cache_key = 3;   // override; default = sha256(normalized sequence)
+  uint32 num_models = 4;               // 1-5, default 5
+  uint32 num_recycles = 5;             // default 3
+  bool use_templates = 6;
+  bool relax = 7;                      // Amber relaxation of top model
+  foldforge.common.v1.ResourceSpec resources = 16;
+}
+
+message ModelPrediction {
+  uint32 model_id = 1;                 // 1-5
+  foldforge.common.v1.Artifact structure_pdb = 2;
+  foldforge.common.v1.Artifact pae = 3;
+  float mean_plddt = 4;
+  float ptm = 5;
+  float iptm = 6;                      // multimer only
+}
+
+message RunResult {
+  repeated ModelPrediction predictions = 1; // ranked best-first
+  bool msa_cache_hit = 2;
+  string msa_cache_key = 3;
+  foldforge.common.v1.Artifact msa_a3m = 4; // the MSA used (cached or freshly built)
+}
+
+message MsaCacheQuery {
+  // Provide exactly one of sequence / cache_key.
+  string sequence = 1;
+  string cache_key = 2;
+}
+
+message MsaCacheEntry {
+  bool present = 1;
+  string cache_key = 2;
+  foldforge.common.v1.Artifact msa_a3m = 3;
+  uint32 num_sequences = 4;            // depth of the alignment
+  google.protobuf.Timestamp built_at = 5;
+}
+
+message RunUpdate {
+  oneof event {
+    foldforge.common.v1.ProgressEvent progress = 1;
+    RunResult result = 2;
+    foldforge.common.v1.ErrorDetail error = 3;
+  }
+}
+
+message Capabilities {
+  string model_version = 1;            // e.g. "alphafold-2.3.2"
+  bool multimer_supported = 2;
+  bool templates_supported = 3;
+}

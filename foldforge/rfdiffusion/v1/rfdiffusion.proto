@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package foldforge.rfdiffusion.v1;
+
+import "google/protobuf/empty.proto";
+import "foldforge/common/v1/common.proto";
+
+option go_package = "github.com/FoldForge/proto/gen/go/foldforge/rfdiffusion/v1;rfdiffusionv1";
+
+// RFdiffusion: de novo protein backbone generation via diffusion.
+service RFdiffusionService {
+  // Server-streaming run: emits ProgressEvent heartbeats, then a terminal
+  // RunResult or ErrorDetail as the final message.
+  rpc Run(RunRequest) returns (stream RunUpdate);
+  rpc GetCapabilities(google.protobuf.Empty) returns (Capabilities);
+}
+
+message RunRequest {
+  // RFdiffusion contig map, e.g. "100-100" (unconditional) or
+  // "A1-10/0 50-60/A15-25" (motif scaffolding).
+  string contigs = 1;
+  optional bytes input_pdb = 2;        // motif / template scaffold (small inputs only)
+  optional foldforge.common.v1.Artifact input_pdb_ref = 3; // preferred for large inputs
+  uint32 num_designs = 4;              // default 1
+  uint32 diffusion_steps = 5;          // T, default 50
+  optional string hotspot_res = 6;     // e.g. "A30,A33,A34" for binder design
+  bool symmetry = 7;
+  optional string symmetry_type = 8;   // e.g. "c4", "d2"
+  map<string, string> extra = 15;      // escape hatch for niche flags
+  foldforge.common.v1.ResourceSpec resources = 16;
+}
+
+message Design {
+  foldforge.common.v1.Artifact backbone_pdb = 1;
+  float plddt = 2;                     // self-consistency proxy
+  uint32 design_index = 3;
+}
+
+message RunResult {
+  repeated Design designs = 1;
+}
+
+message RunUpdate {
+  oneof event {
+    foldforge.common.v1.ProgressEvent progress = 1;
+    RunResult result = 2;
+    foldforge.common.v1.ErrorDetail error = 3;
+  }
+}
+
+message Capabilities {
+  string model_version = 1;
+  repeated string supported_gpu_types = 2;
+  uint32 max_num_designs = 3;
+}

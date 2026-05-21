@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package foldforge.proteinmpnn.v1;
+
+import "google/protobuf/empty.proto";
+import "foldforge/common/v1/common.proto";
+
+option go_package = "github.com/FoldForge/proto/gen/go/foldforge/proteinmpnn/v1;proteinmpnnv1";
+
+// ProteinMPNN: inverse folding - design sequences for a given backbone.
+service ProteinMPNNService {
+  rpc Run(RunRequest) returns (stream RunUpdate);
+  rpc GetCapabilities(google.protobuf.Empty) returns (Capabilities);
+}
+
+message RunRequest {
+  foldforge.common.v1.Artifact backbone_pdb = 1;
+  uint32 num_sequences = 2;            // sequences per backbone, default 8
+  float sampling_temp = 3;             // default 0.1
+  repeated string fixed_positions = 4; // e.g. "A10", "A11" kept from input
+  repeated string omit_aas = 5;        // single-letter AAs to forbid, e.g. ["C"]
+  bool use_soluble_model = 6;          // soluble vs vanilla weights
+  optional uint32 seed = 7;
+  foldforge.common.v1.ResourceSpec resources = 16;
+}
+
+message Sequence {
+  string fasta = 1;
+  float global_score = 2;              // mean negative log-likelihood (lower is better)
+  float seq_recovery = 3;              // vs native, if available
+  uint32 sample_index = 4;
+}
+
+message RunResult {
+  repeated Sequence sequences = 1;
+}
+
+message RunUpdate {
+  oneof event {
+    foldforge.common.v1.ProgressEvent progress = 1;
+    RunResult result = 2;
+    foldforge.common.v1.ErrorDetail error = 3;
+  }
+}
+
+message Capabilities {
+  string model_version = 1;
+  bool soluble_model_available = 2;
+}

@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package foldforge.boltz.v1;
+
+import "google/protobuf/empty.proto";
+import "foldforge/common/v1/common.proto";
+
+option go_package = "github.com/FoldForge/proto/gen/go/foldforge/boltz/v1;boltzv1";
+
+// Boltz: open AlphaFold3-class biomolecular complex structure prediction
+// (proteins, nucleic acids, ligands).
+service BoltzService {
+  rpc Run(RunRequest) returns (stream RunUpdate);
+  rpc GetCapabilities(google.protobuf.Empty) returns (Capabilities);
+}
+
+enum EntityType {
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  ENTITY_TYPE_PROTEIN = 1;
+  ENTITY_TYPE_DNA = 2;
+  ENTITY_TYPE_RNA = 3;
+}
+
+message Chain {
+  string id = 1;                       // e.g. "A"
+  string sequence = 2;
+  EntityType entity_type = 3;
+}
+
+message Ligand {
+  string id = 1;                       // e.g. "L1"
+  string smiles = 2;                   // one of smiles / ccd
+  string ccd = 3;                      // PDB Chemical Component Dictionary code
+}
+
+message RunRequest {
+  repeated Chain chains = 1;
+  repeated Ligand ligands = 2;
+  optional foldforge.common.v1.Artifact msa = 3;  // precomputed MSA (a3m), optional
+  uint32 recycling_steps = 4;          // default 3
+  uint32 diffusion_samples = 5;        // default 1
+  uint32 sampling_steps = 6;           // default 200
+  foldforge.common.v1.ResourceSpec resources = 16;
+}
+
+message Prediction {
+  foldforge.common.v1.Artifact structure_cif = 1;
+  foldforge.common.v1.Artifact pae = 2;            // predicted aligned error matrix
+  float confidence_score = 3;          // aggregate model confidence
+  float ptm = 4;
+  float iptm = 5;                      // interface pTM (complexes)
+  uint32 sample_index = 6;
+}
+
+message RunResult {
+  repeated Prediction predictions = 1;
+}
+
+message RunUpdate {
+  oneof event {
+    foldforge.common.v1.ProgressEvent progress = 1;
+    RunResult result = 2;
+    foldforge.common.v1.ErrorDetail error = 3;
+  }
+}
+
+message Capabilities {
+  string model_version = 1;            // e.g. "boltz-2"
+  bool supports_ligands = 2;
+  bool supports_nucleic_acids = 3;
+}
