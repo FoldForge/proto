@@ -182,6 +182,25 @@ components:
         content_type: { type: string }
         size_bytes: { type: integer }
         sha256: { type: string }
+        metrics:
+          type: object
+          additionalProperties: { type: number, format: double }
+          description: >
+            Per-artifact quality metrics (e.g. plddt, ptm, iptm, confidence),
+            carried so design ranking signal survives the prediction→artifact
+            flattening.
+
+    DesignedSequence:
+      type: object
+      description: An inverse-folding output (ProteinMPNN); inline FASTA, not an artifact.
+      properties:
+        fasta: { type: string }
+        global_score:
+          type: number
+          format: double
+          description: Mean negative log-likelihood; lower is better.
+        seq_recovery: { type: number, format: double }
+        sample_index: { type: integer }
 
     Step:
       type: object
@@ -219,16 +238,26 @@ components:
         outputs:
           type: array
           items: { $ref: "#/components/schemas/Artifact" }
+        sequences:
+          type: array
+          items: { $ref: "#/components/schemas/DesignedSequence" }
+          description: Inverse-folding outputs (ProteinMPNN); empty for other tools.
         error: { $ref: "#/components/schemas/Error" }
         started_at: { type: string, format: date-time }
         finished_at: { type: string, format: date-time }
 
     Workflow:
       type: object
+      description: >
+        Workflow status. The gateway flattens the spec into top-level `name` and
+        `steps` for client convenience.
       properties:
         id: { type: string }
-        spec: { $ref: "#/components/schemas/WorkflowSpec" }
+        name: { type: string }
         state: { $ref: "#/components/schemas/JobState" }
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/Step" }
         step_statuses:
           type: array
           items: { $ref: "#/components/schemas/StepStatus" }
