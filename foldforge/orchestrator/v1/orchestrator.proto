@@ -15,6 +15,10 @@ service OrchestratorService {
   rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse);
   rpc StreamWorkflowEvents(StreamWorkflowEventsRequest) returns (stream WorkflowEvent);
   rpc CancelWorkflow(GetWorkflowRequest) returns (Workflow);
+  // Re-queue a FAILED workflow: its FAILED steps go back to QUEUED (and their
+  // downstream re-runs), while SUCCEEDED steps keep their artifacts and are
+  // skipped. Errors with FAILED_PRECONDITION if the workflow is not FAILED.
+  rpc RetryWorkflow(GetWorkflowRequest) returns (Workflow);
 }
 
 // One node in the workflow DAG. params is tool-specific and validated by
