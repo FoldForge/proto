@@ -72,6 +72,16 @@ paths:
         - in: query
           name: state
           schema: { $ref: "#/components/schemas/JobState" }
+        - in: query
+          name: label
+          description: >
+            Repeatable label selector as `key=value`. A workflow matches when its
+            labels contain ALL supplied pairs (server-side jsonb containment).
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: true
       responses:
         "200":
           description: Page of workflows

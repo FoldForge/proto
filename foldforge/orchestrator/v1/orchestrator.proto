@@ -89,6 +89,9 @@ message ListWorkflowsRequest {
   uint32 page_size = 1;
   string page_token = 2;
   optional foldforge.common.v1.JobState state_filter = 3;
+  // Server-side label filter: a workflow matches when its labels contain ALL of
+  // these key=value pairs (jsonb containment). Empty = no label filtering.
+  map<string, string> label_selector = 4;
 }
 
 message ListWorkflowsResponse {
