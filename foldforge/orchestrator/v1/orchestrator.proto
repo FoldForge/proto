@@ -13,7 +13,7 @@ service OrchestratorService {
   rpc SubmitWorkflow(SubmitWorkflowRequest) returns (Workflow);
   rpc GetWorkflow(GetWorkflowRequest) returns (Workflow);
   rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse);
-  rpc StreamWorkflowEvents(GetWorkflowRequest) returns (stream WorkflowEvent);
+  rpc StreamWorkflowEvents(StreamWorkflowEventsRequest) returns (stream WorkflowEvent);
   rpc CancelWorkflow(GetWorkflowRequest) returns (Workflow);
 }
 
@@ -72,6 +72,15 @@ message GetWorkflowRequest {
   string workflow_id = 1;
 }
 
+message StreamWorkflowEventsRequest {
+  string workflow_id = 1;
+  // Resume after this event id (the SSE Last-Event-ID). 0 = from the beginning
+  // (a fresh subscription gets a current snapshot first). Events with a higher
+  // id are replayed from durable storage before the live stream is joined, so a
+  // client that reconnects after a network blip doesn't miss progress.
+  uint64 from_event_id = 2;
+}
+
 message ListWorkflowsRequest {
   uint32 page_size = 1;
   string page_token = 2;
@@ -90,4 +99,8 @@ message WorkflowEvent {
     Workflow workflow_update = 3;
   }
   google.protobuf.Timestamp at = 4;
+  // Monotonic per-stream id, assigned when the event is persisted. Surfaced to
+  // SSE clients as the event id so a reconnect can resume via from_event_id.
+  // 0 for synthetic events that are not persisted (e.g. the initial snapshot).
+  uint64 event_id = 5;
 }
