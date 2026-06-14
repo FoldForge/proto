@@ -112,6 +112,28 @@ paths:
               schema: { $ref: "#/components/schemas/Workflow" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /v1/workflows/{workflowId}/retry:
+    parameters:
+      - in: path
+        name: workflowId
+        required: true
+        schema: { type: string }
+    post:
+      summary: Retry a FAILED workflow
+      description: >
+        Re-queue a FAILED workflow: its FAILED steps go back to QUEUED and
+        re-run (with their downstream), while SUCCEEDED steps keep their
+        artifacts and are skipped. Returns 400 if the workflow is not FAILED.
+      operationId: retryWorkflow
+      responses:
+        "200":
+          description: Retry requested; workflow re-queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /v1/workflows/{workflowId}/events:
     parameters:
       - in: path
