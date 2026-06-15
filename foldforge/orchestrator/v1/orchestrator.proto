@@ -19,6 +19,43 @@ service OrchestratorService {
   // downstream re-runs), while SUCCEEDED steps keep their artifacts and are
   // skipped. Errors with FAILED_PRECONDITION if the workflow is not FAILED.
   rpc RetryWorkflow(GetWorkflowRequest) returns (Workflow);
+
+  // Per-user API-key auth (the gateway is stateless and has no DB, so it
+  // delegates key lookup to the orchestrator which owns Postgres). The gateway
+  // sends the SHA-256 hex of the presented bearer token — never the raw key —
+  // and caches the result for a short TTL so this isn't a per-request hop.
+  rpc AuthenticateApiKey(AuthenticateApiKeyRequest) returns (AuthenticateApiKeyResponse);
+  // Atomically count one submission against a principal's quota and report
+  // whether it is allowed. Separate from AuthenticateApiKey so reads (GET/SSE)
+  // authenticate without consuming quota; only SubmitWorkflow consumes it. The
+  // count is a single atomic DB update so it is correct across gateway replicas.
+  rpc ConsumeQuota(ConsumeQuotaRequest) returns (ConsumeQuotaResponse);
+}
+
+// Gateway → orchestrator: validate an API key by its SHA-256 hex digest.
+message AuthenticateApiKeyRequest {
+  string key_hash = 1; // lowercase sha256 hex of the raw bearer token
+}
+
+message AuthenticateApiKeyResponse {
+  bool allowed = 1;         // true when the key exists and is active
+  string principal = 2;     // owner/tenant label, for logging + quota scoping
+  string deny_reason = 3;   // human-readable reason when allowed=false
+}
+
+// Gateway → orchestrator: count one submission against the key's quota. Keyed by
+// the SHA-256 hex (the quota counter lives on the key row, a single atomic UPDATE
+// — correct across gateway replicas). `principal` is returned for logging only.
+message ConsumeQuotaRequest {
+  string key_hash = 1; // lowercase sha256 hex, same as AuthenticateApiKey
+}
+
+message ConsumeQuotaResponse {
+  bool allowed = 1;        // false when the quota is already exhausted
+  int64 limit = 2;         // submissions allowed per window (0 = unlimited)
+  int64 used = 3;          // submissions used in the current window (after this one)
+  string principal = 4;    // owner/tenant label, for logging
+  string deny_reason = 5;  // human-readable reason when allowed=false
 }
 
 // One node in the workflow DAG. params is tool-specific and validated by
