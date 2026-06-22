@@ -30,6 +30,15 @@ service OrchestratorService {
   // authenticate without consuming quota; only SubmitWorkflow consumes it. The
   // count is a single atomic DB update so it is correct across gateway replicas.
   rpc ConsumeQuota(ConsumeQuotaRequest) returns (ConsumeQuotaResponse);
+
+  // Billing (prepaid credits). The orchestrator owns the credit ledger (the
+  // gateway is stateless), so balance/history reads are RPCs here. The DEBIT
+  // itself is not a separate RPC: it happens atomically inside SubmitWorkflow
+  // (which owns the new workflow id used as the debit's idempotency key), gated
+  // by the server's billing config. These two are read-only, for the console's
+  // billing page + balance widget.
+  rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
+  rpc ListLedger(ListLedgerRequest) returns (ListLedgerResponse);
 }
 
 // Gateway → orchestrator: validate an API key by its SHA-256 hex digest.
@@ -56,6 +65,33 @@ message ConsumeQuotaResponse {
   int64 used = 3;          // submissions used in the current window (after this one)
   string principal = 4;    // owner/tenant label, for logging
   string deny_reason = 5;  // human-readable reason when allowed=false
+}
+
+// Gateway → orchestrator: read a principal's prepaid credit balance.
+message GetBalanceRequest {
+  string principal = 1;
+}
+
+message GetBalanceResponse {
+  int64 balance = 1;       // current credits (1 credit = 1 cent)
+}
+
+// Gateway → orchestrator: read a principal's recent credit ledger (billing page).
+message ListLedgerRequest {
+  string principal = 1;
+  int32 limit = 2;         // max entries (server clamps to [1, 200])
+}
+
+// One ledger entry: a signed credit movement (+topup/grant/refund, -debit).
+message LedgerEntry {
+  int64 delta = 1;
+  string reason = 2;       // 'topup:stripe:<session>' | 'debit:wf:<id>' | 'refund:wf:<id>' | 'grant:admin'
+  int64 balance_after = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message ListLedgerResponse {
+  repeated LedgerEntry entries = 1;
 }
 
 // One node in the workflow DAG. params is tool-specific and validated by
