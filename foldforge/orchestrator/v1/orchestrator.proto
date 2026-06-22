@@ -39,6 +39,10 @@ service OrchestratorService {
   // billing page + balance widget.
   rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
   rpc ListLedger(ListLedgerRequest) returns (ListLedgerResponse);
+  // Mint credits for a principal. Called by the gateway ONLY after it has verified
+  // a Stripe webhook signature (a verified top-up) — never from a client path. The
+  // idempotency_key (the Stripe event/session id) makes a replayed webhook a no-op.
+  rpc GrantCredits(GrantCreditsRequest) returns (GrantCreditsResponse);
 }
 
 // Gateway → orchestrator: validate an API key by its SHA-256 hex digest.
@@ -92,6 +96,18 @@ message LedgerEntry {
 
 message ListLedgerResponse {
   repeated LedgerEntry entries = 1;
+}
+
+// Gateway → orchestrator: mint credits after a verified Stripe top-up.
+message GrantCreditsRequest {
+  string principal = 1;
+  int64 amount = 2;            // credits to add (must be > 0)
+  string reason = 3;          // e.g. 'topup:stripe:<session>'
+  string idempotency_key = 4; // Stripe event/session id; dedupes webhook replays
+}
+
+message GrantCreditsResponse {
+  int64 balance = 1;          // balance after the grant (or current, if a replay)
 }
 
 // One node in the workflow DAG. params is tool-specific and validated by
