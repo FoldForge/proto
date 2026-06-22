@@ -59,6 +59,7 @@ paths:
               schema: { $ref: "#/components/schemas/Workflow" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/PaymentRequired" }
     get:
       summary: List workflows
       operationId: listWorkflows
@@ -165,6 +166,172 @@ paths:
                 $ref: "#/components/schemas/WorkflowEvent"
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /v1/readyz:
+    get:
+      summary: Readiness probe (deep — pings orchestrator + DB)
+      operationId: readyz
+      security: []
+      responses:
+        "200":
+          description: Service ready to serve traffic
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ready }
+        "503":
+          description: A dependency (orchestrator or DB) is unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: unavailable }
+
+  /v1/workflows/{workflowId}/artifacts/{key}:
+    parameters:
+      - in: path
+        name: workflowId
+        required: true
+        schema: { type: string }
+      - in: path
+        name: key
+        required: true
+        description: >
+          Object key of the artifact, e.g. `artifacts/<sha256>.pdb`. The key
+          itself contains slashes; the gateway serves ONLY keys referenced by a
+          workflow the caller owns (cross-tenant isolation), and ONLY from the
+          configured bucket (not an open object proxy).
+        schema: { type: string }
+    get:
+      summary: Download an artifact
+      operationId: downloadArtifact
+      description: >
+        Streams the artifact bytes from the object store (signed server-side).
+        Returns 503 when the object store is not configured on the gateway.
+      responses:
+        "200":
+          description: Artifact bytes
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503":
+          description: Object store not configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/billing/balance:
+    get:
+      summary: Get prepaid credit balance
+      operationId: getBalance
+      description: Balance for the authenticated principal (1 credit = 1 cent).
+      responses:
+        "200":
+          description: Current balance
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Balance" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/billing/ledger:
+    get:
+      summary: List credit ledger entries
+      operationId: listLedger
+      description: Recent credit movements (top-ups, debits, refunds) for the authed principal.
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 20 }
+      responses:
+        "200":
+          description: Recent ledger entries (newest first)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items: { $ref: "#/components/schemas/LedgerEntry" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/billing/checkout:
+    post:
+      summary: Start a Stripe Checkout for a credit pack
+      operationId: createCheckout
+      description: >
+        Creates a Stripe Checkout Session for the requested credit pack and
+        returns its hosted URL. Returns 503 when Stripe is not configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckoutRequest" }
+      responses:
+        "200":
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, description: Stripe-hosted checkout URL }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: Stripe not configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/billing/webhook:
+    post:
+      summary: Stripe webhook (signature-verified)
+      operationId: stripeWebhook
+      security: []
+      description: >
+        Stripe → gateway. UNAUTHENTICATED (Stripe sends no bearer) but gated by
+        Stripe-Signature verification: credits are minted ONLY for a signature-
+        verified `checkout.session.completed` event, idempotent on the session id.
+        Not for client use.
+      parameters:
+        - in: header
+          name: Stripe-Signature
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Raw Stripe event payload (verified by signature).
+      responses:
+        "200":
+          description: Event received (and credited if it was a paid checkout)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: { type: boolean }
+                  credited: { type: boolean }
+                  balance: { type: integer }
+        "400":
+          description: Missing or invalid Stripe signature
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Stripe webhook not configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -185,6 +352,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     NotFound:
       description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PaymentRequired:
+      description: Insufficient prepaid credits to run the workflow
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -310,3 +482,36 @@ components:
         code: { type: string }
         message: { type: string }
         retryable: { type: boolean }
+
+    Balance:
+      type: object
+      required: [balance]
+      properties:
+        balance:
+          type: integer
+          description: Prepaid credits (1 credit = 1 cent).
+
+    LedgerEntry:
+      type: object
+      description: A signed credit movement.
+      required: [delta, reason, balance_after, created_at]
+      properties:
+        delta:
+          type: integer
+          description: Signed credits (+grant/topup/refund, -debit).
+        reason:
+          type: string
+          description: "e.g. topup:stripe:<session> | debit:wf:<id> | refund:wf:<id> | grant:admin"
+        balance_after: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    CheckoutRequest:
+      type: object
+      required: [credits]
+      properties:
+        credits:
+          type: integer
+          minimum: 1
+          description: Credit pack to buy (1 credit = 1 cent), e.g. 1000 = $10.00.
+        success_url: { type: string }
+        cancel_url: { type: string }
