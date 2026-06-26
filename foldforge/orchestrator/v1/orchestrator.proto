@@ -43,6 +43,12 @@ service OrchestratorService {
   // a Stripe webhook signature (a verified top-up) — never from a client path. The
   // idempotency_key (the Stripe event/session id) makes a replayed webhook a no-op.
   rpc GrantCredits(GrantCreditsRequest) returns (GrantCreditsResponse);
+
+  // Post-design analysis (COMPETITIVE-ANALYSIS.md gap #1): rank + filter the designs
+  // a completed workflow produced, by a chosen quality metric. Read-only over already-
+  // persisted step outputs (artifact metrics + designed-sequence scores) — no GPU; the
+  // metric VALUES come from real model output, the ranking logic does not.
+  rpc RankDesigns(RankDesignsRequest) returns (RankDesignsResponse);
 }
 
 // Gateway → orchestrator: validate an API key by its SHA-256 hex digest.
@@ -108,6 +114,44 @@ message GrantCreditsRequest {
 
 message GrantCreditsResponse {
   int64 balance = 1;          // balance after the grant (or current, if a replay)
+}
+
+// Post-design ranking (gap #1). A numeric filter: keep designs whose `metric` is
+// within [min, max]. A design missing the metric is rejected (can't assert a
+// threshold on an absent value). Omit a bound to leave it open-ended.
+message RankFilter {
+  string metric = 1;
+  optional double min = 2;
+  optional double max = 3;
+}
+
+message RankDesignsRequest {
+  string workflow_id = 1;
+  // Metric to rank by, present in artifact.metrics / sequence scores
+  // (e.g. "plddt", "ptm", "iptm", "pae", "global_score", "seq_recovery").
+  string metric = 2;
+  // true = higher is better, false = lower is better. If unset, inferred from the
+  // metric name (confidence maximized; pae/global_score/rmsd minimized).
+  optional bool maximize = 3;
+  repeated RankFilter filters = 4;   // applied (AND) before ranking
+  uint32 top_k = 5;                  // keep at most N (0 = all)
+}
+
+// One ranked design with its rank (1-based), the score it ranked on, and the
+// underlying artifact/sequence reference + its full metric set.
+message RankedDesign {
+  uint32 rank = 1;
+  double score = 2;
+  string id = 3;            // artifact sha256/uri, or "seq:<sample_index>"
+  string kind = 4;          // "artifact" | "sequence"
+  string source_step = 5;   // step id that produced it
+  map<string, double> metrics = 6;
+}
+
+message RankDesignsResponse {
+  repeated RankedDesign designs = 1;
+  uint32 total_considered = 2;  // candidates seen before filtering
+  uint32 total_ranked = 3;      // survivors after filter + top_k
 }
 
 // One node in the workflow DAG. params is tool-specific and validated by
