@@ -145,6 +145,34 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /v1/workflows/{workflowId}/rank:
+    parameters:
+      - in: path
+        name: workflowId
+        required: true
+        schema: { type: string }
+    post:
+      summary: Rank & filter a workflow's designs
+      description: >
+        Post-design analysis: rank the designs a completed workflow produced by a
+        chosen quality metric (e.g. plddt, iptm, pae, global_score), after applying
+        optional min/max filters. Designs missing the ranking metric are excluded.
+        Read-only; scoped to the caller's workflows.
+      operationId: rankDesigns
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RankRequest" }
+      responses:
+        "200":
+          description: Ranked designs (best first)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RankResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /v1/workflows/{workflowId}/events:
     parameters:
       - in: path
@@ -515,3 +543,62 @@ components:
           description: Credit pack to buy (1 credit = 1 cent), e.g. 1000 = $10.00.
         success_url: { type: string }
         cancel_url: { type: string }
+
+    RankFilter:
+      type: object
+      description: Keep designs whose `metric` is within [min, max]. A design missing the metric is rejected.
+      required: [metric]
+      properties:
+        metric: { type: string }
+        min: { type: number, format: double }
+        max: { type: number, format: double }
+
+    RankRequest:
+      type: object
+      required: [metric]
+      properties:
+        metric:
+          type: string
+          description: Metric to rank by (e.g. plddt, ptm, iptm, pae, global_score, seq_recovery).
+        maximize:
+          type: boolean
+          description: true = higher better, false = lower better. Omit to infer from the metric name.
+        filters:
+          type: array
+          items: { $ref: "#/components/schemas/RankFilter" }
+          description: Pre-ranking filters (all must pass).
+        top_k:
+          type: integer
+          description: Keep at most N (0 = all).
+
+    RankedDesign:
+      type: object
+      required: [rank, score, id, kind]
+      properties:
+        rank:
+          type: integer
+          description: 1-based position, best first.
+        score:
+          type: number
+          format: double
+          description: The value of the ranking metric.
+        id:
+          type: string
+          description: 'Artifact sha256/uri, or seq:<index>.'
+        kind: { type: string, enum: [artifact, sequence] }
+        source_step:
+          type: string
+          description: Step id that produced this design.
+        metrics:
+          type: object
+          additionalProperties: { type: number, format: double }
+
+    RankResponse:
+      type: object
+      required: [designs, total_considered, total_ranked]
+      properties:
+        designs:
+          type: array
+          items: { $ref: "#/components/schemas/RankedDesign" }
+        total_considered: { type: integer, description: Candidates before filtering. }
+        total_ranked: { type: integer, description: Survivors after filter + top_k. }
